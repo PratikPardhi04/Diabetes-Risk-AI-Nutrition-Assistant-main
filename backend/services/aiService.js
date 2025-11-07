@@ -1,4 +1,4 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDDI0BNK32jxtRCQIV_dUur0hM0iJTVYbY';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 // Helper function to call Gemini API with text only
