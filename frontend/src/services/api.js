@@ -1,9 +1,12 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined'
+  ? `${window.location.origin}/api`
+  : '/api');
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -55,6 +58,7 @@ export const mealsAPI = {
   add: (data) => api.post('/meals/add', data),
   getAll: (params) => api.get('/meals', { params }),
   getSummary: (date) => api.get('/meals/summary', { params: { date } }),
+  getReport: (days) => api.get('/meals/report', { params: { days } }),
 };
 
 // Chat API

@@ -6,12 +6,13 @@ import prisma from '../config/database.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 
 // POST /auth/signup
 router.post('/signup', 
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
-    body('email').isEmail().withMessage('Valid email is required'),
+    body('email').trim().normalizeEmail().isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
   ],
   async (req, res) => {
@@ -22,6 +23,7 @@ router.post('/signup',
       }
 
       const { name, email, password } = req.body;
+      console.log('Signup attempt:', email);
 
       // Check if user exists
       const existingUser = await prisma.user.findUnique({
@@ -53,17 +55,18 @@ router.post('/signup',
       // Generate JWT
       const token = jwt.sign(
         { userId: user.id, email: user.email },
-        process.env.JWT_SECRET,
+        JWT_SECRET,
         { expiresIn: '7d' }
       );
 
+      console.log('Signup success:', user.email, user.id);
       res.status(201).json({
         message: 'User created successfully',
         user,
         token
       });
     } catch (error) {
-      console.error('Signup error:', error);
+      console.error('Signup error:', error?.message || error);
       res.status(500).json({ message: 'Server error during signup' });
     }
   }
@@ -72,7 +75,7 @@ router.post('/signup',
 // POST /auth/login
 router.post('/login',
   [
-    body('email').isEmail().withMessage('Valid email is required'),
+    body('email').trim().normalizeEmail().isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required')
   ],
   async (req, res) => {
@@ -83,6 +86,7 @@ router.post('/login',
       }
 
       const { email, password } = req.body;
+      console.log('Login attempt:', email);
 
       // Find user
       const user = await prisma.user.findUnique({
@@ -90,22 +94,25 @@ router.post('/login',
       });
 
       if (!user) {
+        console.log('Login failed: user not found');
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Check password
       const isValidPassword = await bcrypt.compare(password, user.passwordHash);
       if (!isValidPassword) {
+        console.log('Login failed: bad password');
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Generate JWT
       const token = jwt.sign(
         { userId: user.id, email: user.email },
-        process.env.JWT_SECRET,
+        JWT_SECRET,
         { expiresIn: '7d' }
       );
 
+      console.log('Login success:', user.email, user.id);
       res.json({
         message: 'Login successful',
         user: {
@@ -116,11 +123,19 @@ router.post('/login',
         token
       });
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Login error:', error?.message || error);
       res.status(500).json({ message: 'Server error during login' });
     }
   }
 );
+
+// Simple ping endpoints to diagnose mobile proxy/POST issues
+router.get('/ping', (req, res) => {
+  res.json({ ok: true, method: 'GET', path: '/auth/ping' });
+});
+router.post('/ping', (req, res) => {
+  res.json({ ok: true, method: 'POST', path: '/auth/ping', body: req.body || null });
+});
 
 // GET /auth/me
 router.get('/me', authenticate, async (req, res) => {

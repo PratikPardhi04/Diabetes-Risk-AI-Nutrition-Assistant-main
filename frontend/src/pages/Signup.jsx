@@ -45,16 +45,40 @@ const Signup = () => {
     setLoading(true);
 
     try {
-      const response = await authAPI.signup({
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-      });
-      setAuthToken(response.data.token);
-      setUser(response.data.user);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Signup failed. Please try again.');
+      const payload = {
+        name: (formData.name || '').trim(),
+        email: (formData.email || '').trim(),
+        password: (formData.password || '').trim(),
+      };
+      try {
+        const response = await authAPI.signup(payload);
+        setAuthToken(response.data.token);
+        setUser(response.data.user);
+        navigate('/dashboard');
+      } catch (err) {
+        if (!err.response) {
+          try {
+            const res = await fetch('/api/auth/signup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(text || `Signup failed (${res.status})`);
+            const data = JSON.parse(text);
+            setAuthToken(data.token);
+            setUser(data.user);
+            navigate('/dashboard');
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Signup failed. Please try again.');
+          }
+        } else {
+          const status = err.response?.status;
+          const msg = err.response?.data?.message;
+          const firstValidation = err.response?.data?.errors?.[0]?.msg;
+          setError(firstValidation || msg || (status ? `Signup failed (status ${status}). Please try again.` : 'Signup failed. Please try again.'));
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -84,6 +108,8 @@ const Signup = () => {
                   value={formData.name}
                   onChange={handleChange}
                   required
+                  autoCapitalize="words"
+                  autoCorrect="off"
                   placeholder="Your full name"
                 />
               </div>
@@ -97,6 +123,10 @@ const Signup = () => {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="email"
+                  inputMode="email"
                   placeholder="you@example.com"
                 />
               </div>
@@ -110,6 +140,9 @@ const Signup = () => {
                   value={formData.password}
                   onChange={handleChange}
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="new-password"
                   placeholder="••••••••"
                 />
               </div>
@@ -123,6 +156,9 @@ const Signup = () => {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="new-password"
                   placeholder="••••••••"
                 />
               </div>

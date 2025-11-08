@@ -49,10 +49,36 @@ const MealEntry = () => {
     setLoading(true);
 
     try {
-      await mealsAPI.add({ ...formData, imageBase64: imageBase64 || undefined });
-      navigate('/meals');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add meal. Please try again.');
+      try {
+        const res = await mealsAPI.add({ ...formData, imageBase64: imageBase64 || undefined });
+        const newId = res?.data?.meal?.id;
+        navigate('/meals', { state: newId ? { highlightMealId: newId } : undefined });
+        return;
+      } catch (err) {
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/meals/add', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ ...formData, imageBase64: imageBase64 || undefined })
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(text || `Request failed (${res.status})`);
+            const data = JSON.parse(text || '{}');
+            const newId = data?.meal?.id;
+            navigate('/meals', { state: newId ? { highlightMealId: newId } : undefined });
+            return;
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to add meal. Please try again.');
+            return;
+          }
+        }
+        setError(err.response?.data?.message || 'Failed to add meal. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

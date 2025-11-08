@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { chatAPI } from '../services/api';
+import { removeAuthToken } from '../utils/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Footer from '../components/Footer';
 import useSpeechRecognition from '../hooks/useSpeechRecognition';
@@ -41,7 +42,40 @@ const Chat = () => {
   const fetchChatHistory = async () => {
     try {
       setLoadingHistory(true);
-      const response = await chatAPI.getHistory({ limit: 50 });
+      let response;
+      try {
+        response = await chatAPI.getHistory({ limit: 50 });
+      } catch (err) {
+        if (err?.response?.status === 401) {
+          removeAuthToken();
+          navigate('/login');
+          return;
+        }
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const params = new URLSearchParams({ limit: '50' });
+            const res = await fetch(`/api/chat?${params.toString()}`, {
+              headers: {
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              response = { data };
+            } else {
+              throw new Error(`Failed to load chat history (${res.status})`);
+            }
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to load chat history');
+            return;
+          }
+        } else {
+          setError(err.response?.data?.message || 'Failed to load chat history');
+          return;
+        }
+      }
+
       const sortedChats = response.data.chats.sort(
         (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
       );
@@ -113,21 +147,66 @@ const Chat = () => {
 
     try {
       setLoading(true);
-      const response = await chatAPI.send(userQuestion);
-
-      // Update chat with AI response
-      setChats((prev) =>
-        prev.map((chat) =>
-          chat.id === userChat.id
-            ? {
-                ...response.data.chat,
-                isLoading: false,
-              }
-            : chat
-        )
-      );
+      try {
+        const response = await chatAPI.send(userQuestion);
+        // Update chat with AI response
+        setChats((prev) =>
+          prev.map((chat) =>
+            chat.id === userChat.id
+              ? {
+                  ...response.data.chat,
+                  isLoading: false,
+                }
+              : chat
+          )
+        );
+      } catch (err) {
+        if (err?.response?.status === 401) {
+          removeAuthToken();
+          navigate('/login');
+          return;
+        }
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ question: userQuestion })
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(text || `Failed to get response (${res.status})`);
+            }
+            const data = await res.json();
+            setChats((prev) =>
+              prev.map((chat) =>
+                chat.id === userChat.id
+                  ? {
+                      ...data.chat,
+                      isLoading: false,
+                    }
+                  : chat
+              )
+            );
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to get response. Please try again.');
+            // Remove failed chat
+            setChats((prev) => prev.filter((chat) => chat.id !== userChat.id));
+            return;
+          }
+        } else {
+          setError(err.response?.data?.message || 'Failed to get response. Please try again.');
+          // Remove failed chat
+          setChats((prev) => prev.filter((chat) => chat.id !== userChat.id));
+          return;
+        }
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to get response. Please try again.');
+      setError('Failed to get response. Please try again.');
       // Remove failed chat
       setChats((prev) => prev.filter((chat) => chat.id !== userChat.id));
     } finally {

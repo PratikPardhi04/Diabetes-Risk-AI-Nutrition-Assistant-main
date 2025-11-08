@@ -14,6 +14,7 @@ import Questionnaire from './pages/Questionnaire';
 import MealEntry from './pages/MealEntry';
 import MealHistory from './pages/MealHistory';
 import Chat from './pages/Chat';
+import Debug from './pages/Debug';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -113,6 +114,7 @@ function App() {
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/debug" element={<Debug />} />
       </Routes>
     </Router>
   );

@@ -61,23 +61,86 @@ const Questionnaire = () => {
 
     try {
       // Submit assessment
-      const submitResponse = await assessmentAPI.submit({
+      const payload = {
         ...formData,
         age: parseInt(formData.age),
         height: parseFloat(formData.height),
         weight: parseFloat(formData.weight),
         sleep: parseInt(formData.sleep),
-      });
+      };
 
-      const assessmentId = submitResponse.data.assessment.id;
+      let assessmentId;
+      try {
+        const submitResponse = await assessmentAPI.submit(payload);
+        assessmentId = submitResponse.data.assessment.id;
+      } catch (err) {
+        // Fallback with fetch including Authorization header
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/assessment/submit', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify(payload)
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`Submit failed (${res.status}). ${text}`);
+            const data = JSON.parse(text);
+            assessmentId = data.assessment.id;
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to submit assessment. Please try again.');
+            return;
+          }
+        } else {
+          const status = err.response?.status;
+          const msg = err.response?.data?.message;
+          const firstValidation = err.response?.data?.errors?.[0]?.msg;
+          setError(firstValidation || msg || (status ? `Failed to submit assessment (status ${status}).` : 'Failed to submit assessment.'));
+          return;
+        }
+      }
 
       // Get AI prediction
       setPredicting(true);
-      await assessmentAPI.predict(assessmentId);
+      try {
+        await assessmentAPI.predict(assessmentId);
+      } catch (err) {
+        // Fallback to fetch with Authorization
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/assessment/predict', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ assessmentId })
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`Prediction failed (${res.status}). ${text}`);
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to get prediction. Please try again.');
+            return;
+          }
+        } else {
+          const status = err.response?.status;
+          const msg = err.response?.data?.message;
+          const firstValidation = err.response?.data?.errors?.[0]?.msg;
+          setError(firstValidation || msg || (status ? `Prediction failed (status ${status}).` : 'Failed to get prediction.'));
+          return;
+        }
+      }
 
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to submit assessment. Please try again.');
+      const status = err.response?.status;
+      const msg = err.response?.data?.message;
+      const firstValidation = err.response?.data?.errors?.[0]?.msg;
+      setError(firstValidation || msg || (status ? `Failed (status ${status}). Please try again.` : 'Failed. Please try again.'));
     } finally {
       setLoading(false);
       setPredicting(false);

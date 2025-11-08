@@ -32,12 +32,45 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const response = await authAPI.login(formData);
-      setAuthToken(response.data.token);
-      setUser(response.data.user);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      const payload = {
+        email: (formData.email || '').trim(),
+        password: (formData.password || '').trim(),
+      };
+      try {
+        const response = await authAPI.login(payload);
+        setAuthToken(response.data.token);
+        setUser(response.data.user);
+        navigate('/dashboard');
+        return;
+      } catch (err) {
+        // Fallback: some mobile setups reject axios but allow fetch
+        if (!err.response) {
+          try {
+            const res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`Fetch fallback failed (${res.status}). ${text || ''}`);
+            }
+            const data = await res.json();
+            setAuthToken(data.token);
+            setUser(data.user);
+            navigate('/dashboard');
+            return;
+          } catch (fallbackErr) {
+            const networkMsg = fallbackErr?.message || 'Network error';
+            setError(`Login failed. ${networkMsg}`);
+            return;
+          }
+        }
+        const status = err.response?.status;
+        const msg = err.response?.data?.message;
+        const firstValidation = err.response?.data?.errors?.[0]?.msg;
+        setError(firstValidation || msg || (status ? `Login failed (status ${status}). Please try again.` : 'Login failed. Please try again.'));
+      }
     } finally {
       setLoading(false);
     }
@@ -67,6 +100,10 @@ const Login = () => {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="email"
+                  inputMode="email"
                   placeholder="you@example.com"
                 />
               </div>
@@ -80,6 +117,9 @@ const Login = () => {
                   value={formData.password}
                   onChange={handleChange}
                   required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="current-password"
                   placeholder="••••••••"
                 />
               </div>

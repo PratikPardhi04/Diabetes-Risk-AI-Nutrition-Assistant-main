@@ -12,23 +12,24 @@ router.use(authenticate);
 // POST /assessment/submit
 router.post('/submit',
   [
-    body('age').isInt({ min: 1, max: 150 }).withMessage('Valid age is required'),
-    body('gender').notEmpty().withMessage('Gender is required'),
-    body('height').isFloat({ min: 1 }).withMessage('Valid height is required'),
-    body('weight').isFloat({ min: 1 }).withMessage('Valid weight is required'),
-    body('familyHistory').isBoolean().withMessage('Family history is required'),
-    body('activity').notEmpty().withMessage('Activity level is required'),
-    body('smoking').isBoolean().withMessage('Smoking status is required'),
-    body('alcohol').notEmpty().withMessage('Alcohol consumption is required'),
-    body('diet').notEmpty().withMessage('Diet type is required'),
-    body('sleep').isInt({ min: 1, max: 24 }).withMessage('Valid sleep hours is required'),
+    body('age').toInt().isInt({ min: 1, max: 150 }).withMessage('Valid age is required'),
+    body('gender').trim().notEmpty().withMessage('Gender is required'),
+    body('height').toFloat().isFloat({ min: 1 }).withMessage('Valid height is required'),
+    body('weight').toFloat().isFloat({ min: 1 }).withMessage('Valid weight is required'),
+    body('familyHistory').toBoolean().isBoolean().withMessage('Family history is required'),
+    body('activity').trim().notEmpty().withMessage('Activity level is required'),
+    body('smoking').toBoolean().isBoolean().withMessage('Smoking status is required'),
+    body('alcohol').trim().notEmpty().withMessage('Alcohol consumption is required'),
+    body('diet').trim().notEmpty().withMessage('Diet type is required'),
+    body('sleep').toInt().isInt({ min: 1, max: 24 }).withMessage('Valid sleep hours is required'),
     body('symptoms').isArray().withMessage('Symptoms must be an array')
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        console.log('Assessment submit validation errors:', errors.array());
+        return res.status(400).json({ errors: errors.array(), message: 'Validation failed' });
       }
 
       const {
@@ -60,7 +61,7 @@ router.post('/submit',
         assessment
       });
     } catch (error) {
-      console.error('Assessment submit error:', error);
+      console.error('Assessment submit error:', error?.message || error);
       res.status(500).json({ message: 'Server error during assessment submission' });
     }
   }
@@ -69,13 +70,14 @@ router.post('/submit',
 // POST /assessment/predict
 router.post('/predict',
   [
-    body('assessmentId').isInt().withMessage('Assessment ID is required')
+    body('assessmentId').toInt().isInt().withMessage('Assessment ID is required')
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        console.log('Assessment predict validation errors:', errors.array());
+        return res.status(400).json({ errors: errors.array(), message: 'Validation failed' });
       }
 
       const { assessmentId } = req.body;

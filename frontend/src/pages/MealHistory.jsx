@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { mealsAPI } from '../services/api';
+import { removeAuthToken } from '../utils/auth';
 import {
   LineChart,
   Line,
@@ -116,6 +117,9 @@ const MealHistory = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
+  const listRef = useRef(null);
+  const [highlightId, setHighlightId] = useState(() => location.state?.highlightMealId || null);
 
   // Helpers to ensure numeric operations work even if API returns strings
   const safeNumber = (v, fallback = 0) => {
@@ -159,7 +163,40 @@ const MealHistory = () => {
   const fetchMeals = async () => {
     try {
       setLoading(true);
-      const response = await mealsAPI.getAll({ limit: 200, days: 30 });
+      let response;
+      try {
+        response = await mealsAPI.getAll({ limit: 200, days: 30 });
+      } catch (err) {
+        if (err?.response?.status === 401) {
+          removeAuthToken();
+          navigate('/login');
+          return;
+        }
+        if (!err.response) {
+          try {
+            const token = localStorage.getItem('token');
+            const params = new URLSearchParams({ limit: '200', days: '30' });
+            const res = await fetch(`/api/meals?${params.toString()}`, {
+              headers: {
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              response = { data };
+            } else {
+              throw new Error(`Failed to load meals (${res.status})`);
+            }
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || 'Failed to load meals');
+            return;
+          }
+        } else {
+          setError(err.response?.data?.message || 'Failed to load meals');
+          return;
+        }
+      }
+
       const fetchedMeals = (response.data.meals || []).map(normalizeMeal);
 
       // Sort by date (newest first)
@@ -179,8 +216,21 @@ const MealHistory = () => {
       // Build chart data for selected range from 30-day chart set
       const chartDataArray = buildChartData(sortedMeals, rangeDays);
       setChartData(chartDataArray);
+
+      // If asked to highlight a specific meal, scroll to it after short delay
+      if (highlightId) {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-meal-id="${highlightId}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.classList.add('ring-2','ring-primary-500');
+            setTimeout(() => el.classList.remove('ring-2','ring-primary-500'), 1800);
+            setHighlightId(null);
+          }
+        });
+      }
     } catch (err) {
-      setError('Failed to load meals');
+      setError(err?.message || 'Failed to load meals');
     } finally {
       setLoading(false);
     }
@@ -253,18 +303,12 @@ const MealHistory = () => {
           <div className="space-y-8">
             {/* Charts */}
             <div className="rounded-lg border p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
                 <h3 className="text-xl font-bold">Calories & Sugar Trends (Last {rangeDays} Days)</h3>
-                <div className="flex items-center gap-2">
-                  <Button variant={rangeDays === 7 ? 'default' : 'outline'} size="sm" onClick={() => setRangeDays(7)}>7d</Button>
-                  <Button variant={rangeDays === 14 ? 'default' : 'outline'} size="sm" onClick={() => setRangeDays(14)}>14d</Button>
-                  <Button variant={rangeDays === 30 ? 'default' : 'outline'} size="sm" onClick={() => setRangeDays(30)}>30d</Button>
-                  <Button variant={chartMode === 'lines' ? 'default' : 'outline'} size="sm" onClick={() => setChartMode('lines')}>Lines</Button>
-                  <Button variant={chartMode === 'stacked' ? 'default' : 'outline'} size="sm" onClick={() => setChartMode('stacked')}>Stacked</Button>
-                  <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
-                  <Button variant={metric === 'calories' ? 'default' : 'outline'} size="sm" onClick={() => setMetric('calories')}>Calories</Button>
-                  <Button variant={metric === 'sugar' ? 'default' : 'outline'} size="sm" onClick={() => setMetric('sugar')}>Sugar</Button>
-                  <Button variant={metric === 'both' ? 'default' : 'outline'} size="sm" onClick={() => setMetric('both')}>Both</Button>
+                <div className="w-full md:w-auto flex flex-nowrap items-center gap-2 justify-center">
+                  <Button size="sm" className="whitespace-nowrap px-2 py-1 text-xs" onClick={() => setRangeDays(rangeDays === 7 ? 14 : (rangeDays === 14 ? 30 : 7))}>{rangeDays}d</Button>
+                  <Button size="sm" className="whitespace-nowrap px-2 py-1 text-xs" onClick={() => setChartMode(chartMode === 'lines' ? 'stacked' : 'lines')}>{chartMode === 'lines' ? 'Lines' : 'Stacked'}</Button>
+                  <Button size="sm" className="whitespace-nowrap px-2 py-1 text-xs" onClick={() => setMetric(metric === 'calories' ? 'sugar' : (metric === 'sugar' ? 'both' : 'calories'))}>{metric === 'both' ? 'Both' : (metric.charAt(0).toUpperCase() + metric.slice(1))}</Button>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -338,10 +382,11 @@ const MealHistory = () => {
             {/* Meals List */}
             <div className="rounded-lg border p-6">
               <h3 className="text-xl font-bold mb-4">Recent Meals</h3>
-              <div className="space-y-4">
+              <div className="space-y-4" ref={listRef}>
                 {meals.map((meal) => (
                   <div
                     key={meal.id}
+                    data-meal-id={meal.id}
                     className="border rounded-lg p-4 hover:shadow-md transition"
                   >
                     <div className="flex justify-between items-start mb-2">

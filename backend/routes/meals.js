@@ -12,7 +12,7 @@ router.use(authenticate);
 // POST /meals/add
 router.post('/add',
   [
-    body('mealType').isIn(['Breakfast', 'Lunch', 'Dinner', 'Snack']).withMessage('Valid meal type is required'),
+    body('mealType').trim().isIn(['Breakfast', 'Lunch', 'Dinner', 'Snack']).withMessage('Valid meal type is required'),
     body('mealText').trim().notEmpty().withMessage('Meal description is required'),
     body('imageBase64').optional().isString().withMessage('imageBase64 must be a base64 string')
   ],
@@ -20,7 +20,8 @@ router.post('/add',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        console.log('Add meal validation errors:', errors.array());
+        return res.status(400).json({ errors: errors.array(), message: 'Validation failed' });
       }
 
       const { mealType, mealText, imageBase64 } = req.body;
@@ -50,7 +51,7 @@ router.post('/add',
         meal
       });
     } catch (error) {
-      console.error('Add meal error:', error);
+      console.error('Add meal error:', error?.message || error);
       res.status(500).json({ 
         message: 'Server error during meal addition',
         error: error.message 
@@ -157,6 +158,90 @@ router.get('/summary', async (req, res) => {
     });
   } catch (error) {
     console.error('Get meals summary error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /meals/report?days=7|30
+router.get('/report', async (req, res) => {
+  try {
+    const daysNum = Number(req.query.days) || 7;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (daysNum - 1));
+
+    const meals = await prisma.meal.findMany({
+      where: {
+        userId: req.user.id,
+        createdAt: {
+          gte: new Date(startDate.setHours(0, 0, 0, 0)),
+          lte: new Date(endDate.setHours(23, 59, 59, 999))
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const totals = meals.reduce((acc, m) => {
+      acc.calories += Number(m.calories) || 0;
+      acc.carbs += Number(m.carbs) || 0;
+      acc.protein += Number(m.protein) || 0;
+      acc.fat += Number(m.fat) || 0;
+      acc.sugar += Number(m.sugar) || 0;
+      acc.fiber += Number(m.fiber) || 0;
+      return acc;
+    }, { calories: 0, carbs: 0, protein: 0, fat: 0, sugar: 0, fiber: 0 });
+
+    const days = Math.max(1, daysNum);
+    const perDay = {
+      calories: totals.calories / days,
+      carbs: totals.carbs / days,
+      protein: totals.protein / days,
+      fat: totals.fat / days,
+      sugar: totals.sugar / days,
+      fiber: totals.fiber / days,
+    };
+
+    // Simple advice rules (no external API)
+    const advice = [];
+    const risks = [];
+    const advantages = [];
+    if (perDay.sugar > 50) {
+      advice.push('Sugar intake is on the higher side. Cut down on sugary drinks and desserts.');
+      risks.push('High daily sugar may increase risk of insulin resistance and weight gain.');
+    } else if (perDay.sugar <= 30) {
+      advantages.push('Sugar intake appears moderate, which supports stable energy levels.');
+    }
+    if (perDay.fiber < 25) {
+      advice.push('Fiber seems low. Add more whole grains, legumes, and vegetables.');
+      risks.push('Low fiber can negatively impact gut health and blood sugar control.');
+    } else {
+      advantages.push('Adequate fiber supports gut health and satiety.');
+    }
+    if (perDay.protein < 50) {
+      advice.push('Consider adding lean protein sources (eggs, legumes, fish).');
+      risks.push('Low protein may hinder muscle maintenance and satiety.');
+    } else {
+      advantages.push('Protein intake looks sufficient for basic maintenance.');
+    }
+    if (perDay.fat > 80) {
+      advice.push('High fat intake; prefer unsaturated fats and reduce fried foods.');
+      risks.push('High fat diets can increase cardiovascular risk if dominated by saturated fats.');
+    } else {
+      advantages.push('Fat intake is within a reasonable range.');
+    }
+    if (advice.length === 0) advice.push('Great balance overall. Keep up the consistency!');
+
+    res.json({
+      range: { days: daysNum, from: new Date(startDate).toISOString(), to: new Date().toISOString() },
+      totals,
+      perDay,
+      count: meals.length,
+      advice: advice.join(' '),
+      risks,
+      advantages
+    });
+  } catch (error) {
+    console.error('Get meals report error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
